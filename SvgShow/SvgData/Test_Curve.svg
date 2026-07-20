@@ -1,0 +1,33 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:xml="http://www.w3.org/XML/1998/namespace" width="1728" height="972" viewBox="0, 0, 1728, 972">
+  <text x="864" y="30" text-anchor="middle" font-family="Arial" font-size="24" style="fill:black;">测试曲线</text>
+  <text x="20" y="60" text-anchor="start" font-family="Arial" font-size="12" style="fill:black;">AngleTol: 1E-06,DistanceTol: 1E-06</text>
+  <g transform="translate(432, 516) scale(1, -1) scale(41.2) translate(-0, -0)">
+    <polyline points="-10,0 10,0" stroke-width="0.02427184" style="fill:none;stroke:black;" />
+    <polyline points="0,-10 0,10" stroke-width="0.02427184" style="fill:none;stroke:black;" />
+    <polyline points="-5,-5 -4.570133,-4.904041 -4.143808,-4.793401 -3.721526,-4.668211 -3.303785,-4.528618 -2.891075,-4.374785 -2.483881,-4.206895 -2.082682,-4.025143 -1.68795,-3.829745 -1.300149,-3.620929 -0.9197342,-3.39894 -0.5471534,-3.164041 -0.1828444,-2.916507 0.1727644,-2.656629 0.5192549,-2.384713 0.8562198,-2.101079 1.183263,-1.806058 1.5,-1.5 1.806058,-1.183263 2.101079,-0.8562198 2.384713,-0.5192549 2.656629,-0.1727644 2.916507,0.1828444 3.164041,0.5471534 3.39894,0.9197342 3.620929,1.300149 3.829745,1.68795 4.025143,2.082682 4.206895,2.483881 4.374785,2.891075 4.528618,3.303785 4.668211,3.721526 4.793401,4.143808 4.904041,4.570133 5,5" stroke-width="0.02427184" style="fill:none;stroke:green;" />
+    <circle cx="-5" cy="-5" r="0.07281553" stroke-width="0.01213592" style="fill:red;stroke:darkred;" />
+    <circle cx="1.5" cy="-1.5" r="0.07281553" stroke-width="0.01213592" style="fill:red;stroke:darkred;" />
+    <circle cx="5" cy="5" r="0.07281553" stroke-width="0.01213592" style="fill:red;stroke:darkred;" />
+    <polyline points="-5,-5 5,5" stroke-width="0.02427184" style="fill:none;stroke:black;" />
+    <g transform="scale(1, -1) translate(0, -20)">
+      <text x="0" y="10" text-anchor="middle" font-family="Arial" font-size="0.2912621" style="fill:black;" />
+    </g>
+  </g>
+  <g transform="translate(1296, 516) scale(1, -1) scale(41.2) translate(-0, -0)">
+    <polyline points="-10,0 10,0" stroke-width="0.02427184" style="fill:none;stroke:black;" />
+    <polyline points="0,-10 0,10" stroke-width="0.02427184" style="fill:none;stroke:black;" />
+    <circle cx="-12.35321" cy="-4.344037" r="0.07281553" stroke-width="0.01213592" style="fill:red;stroke:darkred;" />
+    <circle cx="-1.493155" cy="-3.726999" r="0.07281553" stroke-width="0.01213592" style="fill:red;stroke:darkred;" />
+    <circle cx="5" cy="5" r="0.07281553" stroke-width="0.01213592" style="fill:red;stroke:darkred;" />
+    <circle cx="5" cy="0" r="0.07281553" stroke-width="0.01213592" style="fill:red;stroke:darkred;" />
+    <circle cx="3.418947" cy="0.9528198" r="0.07281553" stroke-width="0.01213592" style="fill:red;stroke:darkred;" />
+    <polyline points="5,0 3.418947,0.9528198" stroke-width="0.02427184" style="fill:none;stroke:black;" />
+    <polyline points="-12.35321,-4.344037 -11.94151,-4.500548 -11.52468,-4.642853 -11.10323,-4.770785 -10.67763,-4.884193 -10.24839,-4.982944 -9.816027,-5.066923 -9.381034,-5.136028 -8.943928,-5.190181 -8.505222,-5.229317 -8.065434,-5.25339 -7.625077,-5.262372 -7.184672,-5.256252 -6.744736,-5.235038 -6.305785,-5.198754 -5.868337,-5.147443 -5.432904,-5.081166 -5,-5 -4.570133,-4.904041 -4.143808,-4.793401 -3.721526,-4.668211 -3.303785,-4.528618 -2.891075,-4.374785 -2.483881,-4.206895 -2.082682,-4.025143 -1.68795,-3.829745 -1.300149,-3.620929 -0.9197342,-3.39894 -0.5471534,-3.164041 -0.1828444,-2.916507 0.1727644,-2.656629 0.5192549,-2.384713 0.8562198,-2.101079 1.183263,-1.806058 1.5,-1.5 1.806058,-1.183263 2.101079,-0.8562198 2.384713,-0.5192549 2.656629,-0.1727644 2.916507,0.1828444 3.164041,0.5471534 3.39894,0.9197342 3.620929,1.300149 3.829745,1.68795 4.025143,2.082682 4.206895,2.483881 4.374785,2.891075 4.528618,3.303785 4.668211,3.721526 4.793401,4.143808 4.904041,4.570133 5,5" stroke-width="0.02427184" style="fill:none;stroke:green;" />
+    <g transform="scale(1, -1) translate(0, -20)">
+      <text x="0" y="10" text-anchor="middle" font-family="Arial" font-size="0.2912621" style="fill:black;" />
+    </g>
+  </g>
+  <line x1="864" y1="60" x2="864" y2="972" stroke-width="1" stroke-dasharray="4 2" style="stroke:lightgray;" />
+</svg>

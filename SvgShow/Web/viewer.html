@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>SVG Viewer</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { width: 100%; height: 100%; overflow: hidden; background: white; }
+        #viewport {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            cursor: grab;
+            position: relative;
+            background: white;
+        }
+        #viewport.dragging { cursor: grabbing; }
+        #viewport.measure-mode { cursor: crosshair; }
+        #root-svg {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+        .svg-layer-g {
+            transform-origin: 0 0;
+        }
+        #measurement-group {
+            pointer-events: none;
+        }
+        .measure-line {
+            stroke: red;
+            stroke-width: 2;
+            fill: none;
+            vector-effect: non-scaling-stroke;
+        }
+        .measure-label {
+            fill: red;
+            font-family: Arial, sans-serif;
+            font-size: 14px;
+            font-weight: bold;
+        }
+        #status-text {
+            position: absolute;
+            bottom: 5px;
+            right: 10px;
+            font-family: Arial, sans-serif;
+            font-size: 11px;
+            color: #888;
+            pointer-events: none;
+            z-index: 10;
+        }
+    </style>
+</head>
+<body>
+    <div id="viewport">
+        <svg id="root-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" preserveAspectRatio="xMidYMid meet">
+            <defs>
+                <style>
+                    .svg-layer-g { transform-origin: 0 0; }
+                </style>
+            </defs>
+            <g id="layers-group"></g>
+            <g id="measurement-group">
+                <line id="measure-line" class="measure-line" x1="0" y1="0" x2="0" y2="0" style="display:none"/>
+                <text id="measure-label" class="measure-label" x="0" y="0" style="display:none"></text>
+            </g>
+        </svg>
+        <div id="status-text">就绪</div>
+    </div>
+
+    <script>
+        const state = {
+            viewBox: { x: 0, y: 0, w: 800, h: 600 },
+            baseViewBox: { x: 0, y: 0, w: 800, h: 600 },
+            isDragging: false,
+            lastMousePos: { x: 0, y: 0 },
+            measureMode: false,
+            measureStart: null,
+            measureEnd: null,
+            svgLayers: {},
+            layerOrder: [],
+            selectedElement: null,
+            animationPlaying: false,
+            animationFrame: 0,
+            animationInterval: null,
+            animationSpeed: 1000,
+            svgBounds: { x: 0, y: 0, w: 800, h: 600 },
+            allLayersBounds: null
+        };
+
+        const viewport = document.getElementById('viewport');
+        const rootSvg = document.getElementById('root-svg');
+        const layersGroup = document.getElementById('layers-group');
+        const measureLine = document.getElementById('measure-line');
+        const measureLabel = document.getElementById('measure-label');
+        const statusText = document.getElementById('status-text');
+
+        function getCurrentScale() {
+            const rect = viewport.getBoundingClientRect();
+            const scaleX = rect.width / state.viewBox.w;
+            const scaleY = rect.height / state.viewBox.h;
+            return Math.min(scaleX, scaleY);
+        }
+
+        function updateViewBox() {
+            rootSvg.setAttribute('viewBox', 
+                `${state.viewBox.x} ${state.viewBox.y} ${state.viewBox.w} ${state.viewBox.h}`);
+            
+            const scale = getCurrentScale();
+            sendToCSharp({ type: 'scaleChanged', scale: scale / getBaseScale() });
+        }
+
+        function getBaseScale() {
+            const rect = viewport.getBoundingClientRect();
+            const scaleX = rect.width / state.baseViewBox.w;
+            const scaleY = rect.height / state.baseViewBox.h;
+            return Math.min(scaleX, scaleY);
+        }
+
+        function screenToSvg(screenX, screenY) {
+            const pt = rootSvg.createSVGPoint();
+            pt.x = screenX;
+            pt.y = screenY;
+            const ctm = rootSvg.getScreenCTM();
+            if (ctm) {
+                const svgPt = pt.matrixTransform(ctm.inverse());
+                return { x: svgPt.x, y: svgPt.y };
+            }
+            return { x: 0, y: 0 };
+        }
+
+        function svgToScreen(svgX, svgY) {
+            const pt = rootSvg.createSVGPoint();
+            pt.x = svgX;
+            pt.y = svgY;
+            const ctm = rootSvg.getScreenCTM();
+            if (ctm) {
+                const screenPt = pt.matrixTransform(ctm);
+                return { x: screenPt.x, y: screenPt.y };
+            }
+            return { x: 0, y: 0 };
+        }
+
+        viewport.addEventListener('mousedown', (e) => {
+            if (e.button !== 0) return;
+            
+            const pos = screenToSvg(e.clientX, e.clientY);
+            
+            if (state.measureMode) {
+                handleMeasureClick(e.clientX, e.clientY, pos);
+                return;
+            }
+            
+            state.isDragging = true;
+            state.lastMousePos = { x: e.clientX, y: e.clientY };
+            viewport.classList.add('dragging');
+            
+            const target = e.target;
+            if (target && target.tagName && 
+                target !== rootSvg && 
+                target !== layersGroup &&
+                target.tagName !== 'svg') {
+                handleSelection(target);
+            } else {
+                clearSelection();
+            }
+        });
+
+        viewport.addEventListener('mousemove', (e) => {
+            const pos = screenToSvg(e.clientX, e.clientY);
+            const scale = getCurrentScale() / getBaseScale() * 100;
+            updateStatus(`坐标: (${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}) | 缩放: ${scale.toFixed(0)}%`);
+            sendToCSharp({ type: 'mouseMove', x: pos.x, y: pos.y, screenX: e.clientX, screenY: e.clientY });
+            
+            if (state.isDragging && !state.measureMode) {
+                const dx = (e.clientX - state.lastMousePos.x) / getCurrentScale();
+                const dy = (e.clientY - state.lastMousePos.y) / getCurrentScale();
+                state.viewBox.x -= dx;
+                state.viewBox.y -= dy;
+                state.lastMousePos = { x: e.clientX, y: e.clientY };
+                updateViewBox();
+            }
+            
+            if (state.measureMode && state.measureStart) {
+                state.measureEnd = pos;
+                updateMeasureLine(pos);
+            }
+        });
+
+        viewport.addEventListener('mouseup', (e) => {
+            if (e.button !== 0) return;
+            state.isDragging = false;
+            viewport.classList.remove('dragging');
+        });
+
+        viewport.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const zoomFactor = e.deltaY > 0 ? 1.1 : 0.9;
+            
+            const mousePos = screenToSvg(e.clientX, e.clientY);
+            
+            const newW = state.viewBox.w * zoomFactor;
+            const newH = state.viewBox.h * zoomFactor;
+            
+            const minSize = 10;
+            const maxSize = state.svgBounds.w * 100;
+            
+            if (newW < minSize || newH < minSize || newW > maxSize || newH > maxSize) return;
+            
+            const ratioX = (mousePos.x - state.viewBox.x) / state.viewBox.w;
+            const ratioY = (mousePos.y - state.viewBox.y) / state.viewBox.h;
+            
+            state.viewBox.x = mousePos.x - newW * ratioX;
+            state.viewBox.y = mousePos.y - newH * ratioY;
+            state.viewBox.w = newW;
+            state.viewBox.h = newH;
+            
+            updateViewBox();
+        }, { passive: false });
+
+        function handleMeasureClick(screenX, screenY, svgPos) {
+            if (!state.measureStart) {
+                state.measureStart = svgPos;
+                measureLine.style.display = 'block';
+                measureLabel.style.display = 'block';
+                updateMeasureLine(svgPos);
+                sendToCSharp({ type: 'measureStart', x: svgPos.x, y: svgPos.y });
+            } else {
+                state.measureEnd = svgPos;
+                const distance = Math.sqrt(
+                    Math.pow(state.measureEnd.x - state.measureStart.x, 2) +
+                    Math.pow(state.measureEnd.y - state.measureStart.y, 2)
+                );
+                updateMeasureLine(svgPos);
+                sendToCSharp({
+                    type: 'measureComplete',
+                    startX: state.measureStart.x,
+                    startY: state.measureStart.y,
+                    endX: state.measureEnd.x,
+                    endY: state.measureEnd.y,
+                    distance: distance
+                });
+                state.measureStart = null;
+                measureLine.style.display = 'none';
+                measureLabel.style.display = 'none';
+            }
+        }
+
+        function updateMeasureLine(currentPos) {
+            if (!state.measureStart) return;
+            
+            const start = state.measureStart;
+            const end = state.measureEnd || currentPos;
+            
+            measureLine.setAttribute('x1', start.x);
+            measureLine.setAttribute('y1', start.y);
+            measureLine.setAttribute('x2', end.x);
+            measureLine.setAttribute('y2', end.y);
+            
+            const midX = (start.x + end.x) / 2;
+            const midY = (start.y + end.y) / 2 - 10;
+            measureLabel.setAttribute('x', midX);
+            measureLabel.setAttribute('y', midY);
+            
+            const distance = Math.sqrt(
+                Math.pow(end.x - start.x, 2) +
+                Math.pow(end.y - start.y, 2)
+            );
+            measureLabel.textContent = distance.toFixed(2);
+        }
+
+        function handleSelection(element) {
+            clearSelection();
+            
+            let target = element;
+            while (target && target !== layersGroup && 
+                   target.tagName !== 'g' && 
+                   !target.getAttribute('class')?.includes('svg-layer-g')) {
+                if (target.tagName?.match(/^(path|rect|circle|ellipse|line|polyline|polygon|text|g)$/i)) {
+                    break;
+                }
+                target = target.parentElement;
+            }
+            
+            if (!target || target === layersGroup) return;
+            
+            state.selectedElement = target;
+            target.style.filter = 'drop-shadow(0 0 3px #0078d7)';
+            
+            const bbox = target.getBBox();
+            
+            const info = {
+                type: target.tagName,
+                x: bbox.x,
+                y: bbox.y,
+                width: bbox.width,
+                height: bbox.height,
+                centerX: bbox.x + bbox.width / 2,
+                centerY: bbox.y + bbox.height / 2
+            };
+            
+            sendToCSharp({ type: 'elementSelected', element: info });
+        }
+
+        function clearSelection() {
+            if (state.selectedElement) {
+                state.selectedElement.style.filter = '';
+                state.selectedElement = null;
+            }
+            sendToCSharp({ type: 'selectionCleared' });
+        }
+
+        function addSvgLayer(id, svgContent, fileName) {
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = svgContent;
+            const svgElem = tempDiv.querySelector('svg');
+            
+            if (!svgElem) return;
+            
+            const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+            g.setAttribute('class', 'svg-layer-g');
+            g.setAttribute('id', `layer-${id}`);
+            g.setAttribute('data-file-name', fileName);
+            
+            while (svgElem.firstChild) {
+                g.appendChild(svgElem.firstChild);
+            }
+            
+            layersGroup.appendChild(g);
+            state.svgLayers[id] = { element: g, fileName, visible: true };
+            state.layerOrder.push(id);
+            
+            recalculateAllBounds();
+            
+            sendToCSharp({ type: 'layerAdded', id, fileName });
+        }
+
+        function recalculateAllBounds() {
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            let hasBounds = false;
+            
+            state.layerOrder.forEach(id => {
+                const layer = state.svgLayers[id];
+                if (!layer || !layer.visible) return;
+                
+                try {
+                    const bbox = layer.element.getBBox();
+                    if (bbox.width > 0 && bbox.height > 0) {
+                        minX = Math.min(minX, bbox.x);
+                        minY = Math.min(minY, bbox.y);
+                        maxX = Math.max(maxX, bbox.x + bbox.width);
+                        maxY = Math.max(maxY, bbox.y + bbox.height);
+                        hasBounds = true;
+                    }
+                } catch(e) {}
+            });
+            
+            if (hasBounds) {
+                const padding = 0.1;
+                const w = maxX - minX;
+                const h = maxY - minY;
+                
+                state.allLayersBounds = {
+                    x: minX - w * padding,
+                    y: minY - h * padding,
+                    w: w * (1 + 2 * padding),
+                    h: h * (1 + 2 * padding)
+                };
+                
+                state.svgBounds = { ...state.allLayersBounds };
+            }
+        }
+
+        function setLayerVisible(id, visible) {
+            const layer = state.svgLayers[id];
+            if (layer) {
+                layer.visible = visible;
+                layer.element.style.display = visible ? 'block' : 'none';
+                recalculateAllBounds();
+            }
+        }
+
+        function removeSvgLayer(id) {
+            const layer = state.svgLayers[id];
+            if (layer) {
+                layer.element.remove();
+                delete state.svgLayers[id];
+                state.layerOrder = state.layerOrder.filter(lid => lid !== id);
+                recalculateAllBounds();
+            }
+        }
+
+        function setMeasureMode(enabled) {
+            state.measureMode = enabled;
+            if (enabled) {
+                viewport.classList.add('measure-mode');
+                state.measureStart = null;
+                state.measureEnd = null;
+                measureLine.style.display = 'none';
+                measureLabel.style.display = 'none';
+            } else {
+                viewport.classList.remove('measure-mode');
+                state.measureStart = null;
+                state.measureEnd = null;
+                measureLine.style.display = 'none';
+                measureLabel.style.display = 'none';
+            }
+        }
+
+        function resetView() {
+            if (state.allLayersBounds) {
+                state.viewBox = { ...state.allLayersBounds };
+                state.baseViewBox = { ...state.allLayersBounds };
+            } else {
+                state.viewBox = { x: 0, y: 0, w: 800, h: 600 };
+                state.baseViewBox = { x: 0, y: 0, w: 800, h: 600 };
+            }
+            updateViewBox();
+        }
+
+        function setScale(scale) {
+            const baseW = state.baseViewBox.w;
+            const baseH = state.baseViewBox.h;
+            state.viewBox.w = baseW / scale;
+            state.viewBox.h = baseH / scale;
+            updateViewBox();
+        }
+
+        function startAnimation(intervalMs) {
+            stopAnimation();
+            if (state.layerOrder.length < 2) return;
+            
+            state.animationPlaying = true;
+            state.animationSpeed = intervalMs;
+            state.animationFrame = 0;
+            
+            updateAnimationFrame();
+            
+            state.animationInterval = setInterval(() => {
+                state.animationFrame = (state.animationFrame + 1) % state.layerOrder.length;
+                updateAnimationFrame();
+            }, intervalMs);
+        }
+
+        function stopAnimation() {
+            state.animationPlaying = false;
+            if (state.animationInterval) {
+                clearInterval(state.animationInterval);
+                state.animationInterval = null;
+            }
+        }
+
+        function pauseAnimation() {
+            if (state.animationInterval) {
+                clearInterval(state.animationInterval);
+                state.animationInterval = null;
+            }
+        }
+
+        function resumeAnimation() {
+            if (state.animationPlaying && !state.animationInterval) {
+                state.animationInterval = setInterval(() => {
+                    state.animationFrame = (state.animationFrame + 1) % state.layerOrder.length;
+                    updateAnimationFrame();
+                }, state.animationSpeed);
+            }
+        }
+
+        function setAnimationSpeed(speed) {
+            state.animationSpeed = speed;
+            if (state.animationInterval) {
+                pauseAnimation();
+                resumeAnimation();
+            }
+        }
+
+        function updateAnimationFrame() {
+            state.layerOrder.forEach((id, index) => {
+                setLayerVisible(id, index === state.animationFrame);
+            });
+            
+            const currentId = state.layerOrder[state.animationFrame];
+            const currentLayer = state.svgLayers[currentId];
+            
+            sendToCSharp({
+                type: 'animationFrame',
+                frame: state.animationFrame,
+                total: state.layerOrder.length,
+                fileName: currentLayer ? currentLayer.fileName : ''
+            });
+        }
+
+        function clearAll() {
+            stopAnimation();
+            Object.keys(state.svgLayers).forEach(id => {
+                state.svgLayers[id].element.remove();
+            });
+            state.svgLayers = {};
+            state.layerOrder = [];
+            state.allLayersBounds = null;
+            state.svgBounds = { x: 0, y: 0, w: 800, h: 600 };
+            clearSelection();
+            resetView();
+        }
+
+        function updateStatus(text) {
+            statusText.textContent = text;
+        }
+
+        function sendToCSharp(message) {
+            if (window.chrome && window.chrome.webview) {
+                window.chrome.webview.postMessage(message);
+            }
+        }
+
+        window.addEventListener('resize', () => {
+            updateViewBox();
+        });
+
+        window.chrome?.webview?.addEventListener('message', (event) => {
+            const msg = event.data;
+            if (!msg || !msg.action) return;
+            
+            switch (msg.action) {
+                case 'addSvg':
+                    addSvgLayer(msg.id, msg.svgContent, msg.fileName);
+                    resetView();
+                    break;
+                case 'removeSvg':
+                    removeSvgLayer(msg.id);
+                    break;
+                case 'setLayerVisible':
+                    setLayerVisible(msg.id, msg.visible);
+                    break;
+                case 'setMeasureMode':
+                    setMeasureMode(msg.enabled);
+                    break;
+                case 'resetView':
+                    resetView();
+                    break;
+                case 'setScale':
+                    setScale(msg.scale);
+                    break;
+                case 'startAnimation':
+                    startAnimation(msg.interval);
+                    break;
+                case 'stopAnimation':
+                    stopAnimation();
+                    break;
+                case 'pauseAnimation':
+                    pauseAnimation();
+                    break;
+                case 'resumeAnimation':
+                    resumeAnimation();
+                    break;
+                case 'setAnimationSpeed':
+                    setAnimationSpeed(msg.speed);
+                    break;
+                case 'clearAll':
+                    clearAll();
+                    break;
+            }
+        });
+    </script>
+</body>
+</html>
