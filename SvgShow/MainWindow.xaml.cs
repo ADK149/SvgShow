@@ -1,5 +1,6 @@
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Win32;
+using SvgShow.Models;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Text.Json;
@@ -8,39 +9,36 @@ using System.Windows.Controls;
 
 namespace SvgShow
 {
-    public class LayerItem
-    {
-        public string Name { get; set; } = "";
-        public bool IsVisible { get; set; } = true;
-        public string Id { get; set; } = "";
-    }
-
-    public class SvgFileItem
-    {
-        public string FileName { get; set; } = "";
-        public bool IsActive { get; set; } = true;
-        public string Id { get; set; } = "";
-    }
-
     public partial class MainWindow : Window
     {
-        private ObservableCollection<LayerItem> _layers = new();
-        private ObservableCollection<SvgFileItem> _svgFiles = new();
+        private ObservableCollection<TreeItem> _treeItems = new();
         private bool _isMeasureMode = false;
         private bool _webViewReady = false;
-        private int _svgCounter = 0;
+        private string _currentSvgPath = "";
+        private string? _pendingLoadFile = null;
+        private List<string> _allSvgFiles = new();
 
         public MainWindow()
         {
             InitializeComponent();
-            lstLayers.ItemsSource = _layers;
-            lstSvgFiles.ItemsSource = _svgFiles;
+            treeView.ItemsSource = _treeItems;
             Loaded += MainWindow_Loaded;
         }
 
         private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
         {
             await InitializeWebViewAsync();
+
+            if (!string.IsNullOrEmpty(App.StartupSvgFile))
+            {
+                var file = App.StartupSvgFile;
+                var directory = Path.GetDirectoryName(file);
+                if (!string.IsNullOrEmpty(directory))
+                {
+                    var svgFiles = Directory.GetFiles(directory, "*.svg", SearchOption.TopDirectoryOnly);
+                    AddDirectoryToTree(svgFiles, file);
+                }
+            }
         }
 
         private async Task InitializeWebViewAsync()
@@ -59,6 +57,12 @@ namespace SvgShow
             if (e.IsSuccess)
             {
                 _webViewReady = true;
+                if (!string.IsNullOrEmpty(_pendingLoadFile))
+                {
+                    var file = _pendingLoadFile;
+                    _pendingLoadFile = null;
+                    LoadSvgFile(file);
+                }
             }
         }
 
@@ -106,9 +110,6 @@ namespace SvgShow
                         break;
                     case "measureComplete":
                         HandleMeasureComplete(root);
-                        break;
-                    case "animationFrame":
-                        HandleAnimationFrame(root);
                         break;
                 }
             }
@@ -201,112 +202,178 @@ namespace SvgShow
             });
         }
 
-        private void HandleAnimationFrame(JsonElement root)
-        {
-            var frame = root.GetProperty("frame").GetInt32();
-            var total = root.GetProperty("total").GetInt32();
-            var fileName = root.GetProperty("fileName").GetString();
-            
-            Dispatcher.Invoke(() =>
-            {
-                System.Diagnostics.Debug.WriteLine($"动画帧 {frame + 1}/{total}: {fileName}");
-            });
-        }
-
         private void OpenSvg_Click(object sender, RoutedEventArgs e)
         {
             var openFileDialog = new OpenFileDialog
             {
                 Filter = "SVG文件 (*.svg)|*.svg|所有文件 (*.*)|*.*",
-                Multiselect = true,
+                Multiselect = false,
                 Title = "选择SVG文件"
             };
 
             if (openFileDialog.ShowDialog() == true)
             {
-                LoadSvgFiles(openFileDialog.FileNames);
+                var selectedFile = openFileDialog.FileName;
+                var directory = Path.GetDirectoryName(selectedFile);
+                
+                if (!string.IsNullOrEmpty(directory))
+                {
+                    var svgFiles = Directory.GetFiles(directory, "*.svg", SearchOption.TopDirectoryOnly);
+                    AddDirectoryToTree(svgFiles, selectedFile);
+                }
             }
         }
 
-        private async void LoadSvgFiles(string[] filePaths)
+        private void AddDirectoryToTree(string[] filePaths, string? initialFile = null)
         {
-            try
+            if (filePaths.Length == 0) return;
+            
+            var directory = Path.GetDirectoryName(filePaths[0]);
+            if (string.IsNullOrEmpty(directory)) return;
+            
+            var existingFolder = _treeItems.FirstOrDefault(item => item is FolderItem folder && folder.Path == directory) as FolderItem;
+            
+            if (existingFolder != null)
             {
+                var existingFiles = existingFolder.Children.Cast<SvgFileItem>().Select(s => s.FullPath).ToHashSet();
+                
                 foreach (var filePath in filePaths)
                 {
-                    var svgContent = await File.ReadAllTextAsync(filePath);
-                    var fileName = Path.GetFileName(filePath);
-                    var id = $"svg{_svgCounter++}";
-                    
-                    var svgItem = new SvgFileItem
+                    if (!existingFiles.Contains(filePath))
                     {
-                        FileName = fileName,
-                        IsActive = true,
-                        Id = id
-                    };
-                    _svgFiles.Add(svgItem);
-
-                    _layers.Add(new LayerItem
-                    {
-                        Name = fileName,
-                        IsVisible = true,
-                        Id = id
-                    });
-
-                    var message = new
-                    {
-                        action = "addSvg",
-                        id = id,
-                        svgContent = svgContent,
-                        fileName = fileName
-                    };
-                    PostMessage(message);
+                        existingFolder.Children.Add(new SvgFileItem
+                        {
+                            FileName = Path.GetFileName(filePath),
+                            FullPath = filePath
+                        });
+                    }
                 }
+                
+                existingFolder.Children = new ObservableCollection<TreeItem>(
+                    existingFolder.Children.OrderBy(c => c is SvgFileItem s ? s.FileName : ""));
+            }
+            else
+            {
+                var folder = new FolderItem
+                {
+                    Name = Path.GetFileName(directory),
+                    Path = directory,
+                    IsExpanded = true
+                };
+                
+                foreach (var filePath in filePaths.OrderBy(f => Path.GetFileName(f)))
+                {
+                    folder.Children.Add(new SvgFileItem
+                    {
+                        FileName = Path.GetFileName(filePath),
+                        FullPath = filePath
+                    });
+                }
+                folder.HasSvgFiles = folder.Children.Count > 0;
+                
+                _treeItems.Add(folder);
+            }
+            
+            foreach (var filePath in filePaths)
+            {
+                if (!_allSvgFiles.Contains(filePath))
+                {
+                    _allSvgFiles.Add(filePath);
+                }
+            }
+            
+            if (!string.IsNullOrEmpty(initialFile))
+            {
+                LoadSvgFile(initialFile);
+            }
+        }
+
+        private async void LoadSvgFile(string filePath)
+        {
+            if (_currentSvgPath == filePath) return;
+
+            if (!_webViewReady)
+            {
+                _pendingLoadFile = filePath;
+                return;
+            }
+
+            try
+            {
+                _currentSvgPath = filePath;
+                var svgContent = await File.ReadAllTextAsync(filePath);
+
+                txtCurrentFile.Text = Path.GetFileName(filePath);
+                txtFilePath.Text = filePath;
+
+                SelectTreeViewItem(filePath);
+
+                PostMessage(new { action = "clearAll" });
+                await Task.Delay(50);
+                PostMessage(new
+                {
+                    action = "addSvg",
+                    id = "current",
+                    svgContent = svgContent,
+                    fileName = Path.GetFileName(filePath)
+                });
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"加载SVG文件失败: {ex.Message}", "错误", 
+                MessageBox.Show($"加载SVG文件失败: {ex.Message}", "错误",
                     MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
-        private void LayerChecked(object sender, RoutedEventArgs e)
+        private void SelectTreeViewItem(string filePath)
         {
-            var checkbox = sender as CheckBox;
-            var layer = checkbox?.DataContext as LayerItem;
-            
-            if (layer != null)
+            foreach (var item in _treeItems)
             {
-                var message = new
+                if (item is not FolderItem folder) continue;
+
+                foreach (var child in folder.Children)
                 {
-                    action = "setLayerVisible",
-                    id = layer.Id,
-                    visible = layer.IsVisible
-                };
-                PostMessage(message);
+                    if (child is SvgFileItem fileItem && fileItem.FullPath == filePath && fileItem.IsSelected)
+                    {
+                        return;
+                    }
+                }
+            }
+
+            foreach (var item in _treeItems)
+            {
+                if (item is not FolderItem folder) continue;
+
+                foreach (var child in folder.Children)
+                {
+                    if (child is SvgFileItem fileItem)
+                    {
+                        fileItem.IsSelected = fileItem.FullPath == filePath;
+                        if (fileItem.FullPath == filePath)
+                        {
+                            folder.IsExpanded = true;
+                        }
+                    }
+                }
             }
         }
 
-        private void SvgFileChecked(object sender, RoutedEventArgs e)
+        private void TreeView_SelectedItemChanged(object sender, RoutedPropertyChangedEventArgs<object> e)
         {
-            var checkbox = sender as CheckBox;
-            var svgFile = checkbox?.DataContext as SvgFileItem;
-            
-            if (svgFile != null)
+            var selectedItem = e.NewValue as SvgFileItem;
+            if (selectedItem != null)
             {
-                var layer = _layers.FirstOrDefault(l => l.Id == svgFile.Id);
-                if (layer != null)
-                {
-                    layer.IsVisible = svgFile.IsActive;
-                }
-                
-                var message = new
-                {
-                    action = "setLayerVisible",
-                    id = svgFile.Id,
-                    visible = svgFile.IsActive
-                };
-                PostMessage(message);
+                LoadSvgFile(selectedItem.FullPath);
+            }
+        }
+
+        private void TreeView_PreviewMouseWheel(object sender, System.Windows.Input.MouseWheelEventArgs e)
+        {
+            if (treeScrollViewer != null)
+            {
+                treeScrollViewer.ScrollToVerticalOffset(
+                    treeScrollViewer.VerticalOffset - e.Delta / 3.0);
+                e.Handled = true;
             }
         }
 
@@ -326,12 +393,11 @@ namespace SvgShow
                 btnMeasure.Background = System.Windows.Media.Brushes.LightGray;
             }
             
-            var message = new
+            PostMessage(new
             {
                 action = "setMeasureMode",
                 enabled = _isMeasureMode
-            };
-            PostMessage(message);
+            });
         }
 
         private void ResetView_Click(object sender, RoutedEventArgs e)
@@ -341,7 +407,7 @@ namespace SvgShow
 
         private void PlayAnimation_Click(object sender, RoutedEventArgs e)
         {
-            if (_svgFiles.Count < 2)
+            if (_allSvgFiles.Count < 2)
             {
                 MessageBox.Show("至少需要加载2个SVG文件才能播放动画", "提示", 
                     MessageBoxButton.OK, MessageBoxImage.Information);
@@ -349,7 +415,13 @@ namespace SvgShow
             }
             
             var interval = (int)(1000.0 / sliderSpeed.Value);
-            PostMessage(new { action = "startAnimation", interval = interval });
+            
+            PostMessage(new
+            {
+                action = "startAnimation",
+                interval = interval,
+                files = _allSvgFiles.Select(Path.GetFileName).ToList()
+            });
         }
 
         private void PauseAnimation_Click(object sender, RoutedEventArgs e)
@@ -360,6 +432,11 @@ namespace SvgShow
         private void StopAnimation_Click(object sender, RoutedEventArgs e)
         {
             PostMessage(new { action = "stopAnimation" });
+            
+            if (!string.IsNullOrEmpty(_currentSvgPath))
+            {
+                LoadSvgFile(_currentSvgPath);
+            }
         }
 
         private void SliderSpeed_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
@@ -367,6 +444,82 @@ namespace SvgShow
             if (!_webViewReady) return;
             var interval = (int)(1000.0 / e.NewValue);
             PostMessage(new { action = "setAnimationSpeed", speed = interval });
+        }
+
+        private void AssociateSvg_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var exePath = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName;
+                if (string.IsNullOrEmpty(exePath) || !File.Exists(exePath))
+                {
+                    MessageBox.Show("无法获取当前程序路径", "错误", 
+                        MessageBoxButton.OK, MessageBoxImage.Error);
+                    return;
+                }
+
+                var progId = "SvgShow.Application";
+                var friendlyName = "SvgShow 可视化工具";
+
+                using (var classesRoot = Registry.CurrentUser.OpenSubKey(@"Software\Classes", true))
+                {
+                    using (var progIdKey = classesRoot.CreateSubKey(progId))
+                    {
+                        progIdKey.SetValue("", friendlyName);
+                        using (var iconKey = progIdKey.CreateSubKey("DefaultIcon"))
+                        {
+                            iconKey.SetValue("", $"\"{exePath}\",0");
+                        }
+                        using (var shellKey = progIdKey.CreateSubKey(@"shell\open\command"))
+                        {
+                            shellKey.SetValue("", $"\"{exePath}\" \"%1\"");
+                        }
+                    }
+
+                    using (var svgKey = classesRoot.CreateSubKey(@".svg"))
+                    {
+                        svgKey.SetValue("", progId);
+                    }
+                }
+
+                NotifyShell();
+
+                MessageBox.Show($"已成功将.svg文件关联到本程序！\n程序路径：{exePath}\n\n现在双击.svg文件将自动使用本程序打开。",
+                    "关联成功", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                MessageBox.Show("没有足够的权限写入注册表。\n请尝试以管理员身份运行本程序后再进行关联。",
+                    "权限不足", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"关联失败: {ex.Message}", "错误",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void NotifyShell()
+        {
+            try
+            {
+                var shChangeNotify = Win32.NativeMethods.SHChangeNotifyRegister(
+                    Win32.NativeMethods.HWND_BROADCAST,
+                    Win32.NativeMethods.SHCNF_IDLIST,
+                    IntPtr.Zero,
+                    IntPtr.Zero,
+                    1,
+                    new[] { new Win32.NativeMethods.SHChangeNotifyEntry { } });
+                
+                Win32.NativeMethods.SHChangeNotify(
+                    Win32.NativeMethods.SHCNE_ASSOCCHANGED,
+                    Win32.NativeMethods.SHCNF_IDLIST,
+                    IntPtr.Zero,
+                    IntPtr.Zero);
+            }
+            catch
+            {
+            }
         }
     }
 }

@@ -4,6 +4,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+        xmlns:local="clr-namespace:SvgShow.Models"
         mc:Ignorable="d"
         Title="SVG可视化工具" Height="800" Width="1200"
         WindowState="Maximized">
@@ -12,9 +13,50 @@
             <Setter Property="Margin" Value="2"/>
             <Setter Property="Padding" Value="5,2"/>
         </Style>
-        <Style TargetType="CheckBox">
-            <Setter Property="Margin" Value="2"/>
-        </Style>
+        
+        <HierarchicalDataTemplate DataType="{x:Type local:FolderItem}" ItemsSource="{Binding Children}">
+            <StackPanel Orientation="Horizontal">
+                <Image Width="16" Height="16" Margin="2">
+                    <Image.Source>
+                        <DrawingImage>
+                            <DrawingImage.Drawing>
+                                <GeometryDrawing Geometry="M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm0 12H4V8h16v10z">
+                                    <GeometryDrawing.Pen>
+                                        <Pen Brush="#888" Thickness="1"/>
+                                    </GeometryDrawing.Pen>
+                                    <GeometryDrawing.Brush>
+                                        <SolidColorBrush Color="#FFD966"/>
+                                    </GeometryDrawing.Brush>
+                                </GeometryDrawing>
+                            </DrawingImage.Drawing>
+                        </DrawingImage>
+                    </Image.Source>
+                </Image>
+                <TextBlock Text="{Binding Name}" Margin="2,0"/>
+            </StackPanel>
+        </HierarchicalDataTemplate>
+        
+        <DataTemplate DataType="{x:Type local:SvgFileItem}">
+            <StackPanel Orientation="Horizontal">
+                <Image Width="16" Height="16" Margin="2">
+                    <Image.Source>
+                        <DrawingImage>
+                            <DrawingImage.Drawing>
+                                <GeometryDrawing Geometry="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z">
+                                    <GeometryDrawing.Pen>
+                                        <Pen Brush="#888" Thickness="1"/>
+                                    </GeometryDrawing.Pen>
+                                    <GeometryDrawing.Brush>
+                                        <SolidColorBrush Color="#4DA6FF"/>
+                                    </GeometryDrawing.Brush>
+                                </GeometryDrawing>
+                            </DrawingImage.Drawing>
+                        </DrawingImage>
+                    </Image.Source>
+                </Image>
+                <TextBlock Text="{Binding FileName}" Margin="2,0"/>
+            </StackPanel>
+        </DataTemplate>
     </Window.Resources>
     <Grid>
         <Grid.RowDefinitions>
@@ -23,7 +65,7 @@
         </Grid.RowDefinitions>
         
         <ToolBar Grid.Row="0" Height="40">
-            <Button Content="打开SVG" Click="OpenSvg_Click" ToolTip="打开一个或多个SVG文件"/>
+            <Button Content="打开SVG" Click="OpenSvg_Click" ToolTip="打开SVG文件或目录"/>
             
             <Separator/>
             
@@ -50,43 +92,56 @@
             
             <TextBlock Text="缩放:" Margin="5,0"/>
             <TextBlock x:Name="txtScale" Text="100%" Margin="5,0"/>
+            
+            <Separator/>
+            
+            <Button Content="关联SVG" Click="AssociateSvg_Click" x:Name="btnAssociate"
+                    ToolTip="将本程序设置为.svg文件的默认打开方式"/>
         </ToolBar>
         
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="200"/>
+                <ColumnDefinition Width="250"/>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="250"/>
             </Grid.ColumnDefinitions>
             
             <Border Grid.Column="0" Background="#F5F5F5" BorderBrush="Gray" BorderThickness="1" Margin="2">
-                <StackPanel>
-                    <TextBlock Text="图层列表" FontWeight="Bold" Margin="5"/>
-                    <ListBox x:Name="lstLayers" Height="Auto" Margin="2" SelectionMode="Extended">
-                        <ListBox.ItemTemplate>
-                            <DataTemplate>
-                                <StackPanel Orientation="Horizontal">
-                                    <CheckBox IsChecked="{Binding IsVisible}" Content="{Binding Name}" 
-                                              Checked="LayerChecked" Unchecked="LayerChecked"/>
-                                </StackPanel>
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-                    </ListBox>
-                    
-                    <Separator Margin="5"/>
-                    
-                    <TextBlock Text="SVG文件" FontWeight="Bold" Margin="5"/>
-                    <ListBox x:Name="lstSvgFiles" Height="Auto" Margin="2">
-                        <ListBox.ItemTemplate>
-                            <DataTemplate>
-                                <StackPanel Orientation="Horizontal">
-                                    <CheckBox IsChecked="{Binding IsActive}" Content="{Binding FileName}" 
-                                              Checked="SvgFileChecked" Unchecked="SvgFileChecked"/>
-                                </StackPanel>
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-                    </ListBox>
-                </StackPanel>
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <TextBlock Text="SVG文件目录" FontWeight="Bold" Margin="5"/>
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                                  x:Name="treeScrollViewer">
+                        <TreeView x:Name="treeView" Margin="2"
+                                  SelectedItemChanged="TreeView_SelectedItemChanged"
+                                  PreviewMouseWheel="TreeView_PreviewMouseWheel">
+                            <TreeView.ItemContainerStyle>
+                            <Style TargetType="TreeViewItem">
+                                <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
+                                    <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}"/>
+                                    <Setter Property="BorderBrush" Value="Transparent"/>
+                                <Style.Triggers>
+                                    <Trigger Property="IsSelected" Value="True">
+                                            <Setter Property="Background" Value="Gray"/>
+                                            <Setter Property="Foreground" Value="#333"/>
+                                            <Setter Property="BorderBrush" Value="Gray"/>
+                                        <Setter Property="FontWeight" Value="Bold"/>
+                                    </Trigger>
+                                    <Trigger Property="IsSelected" Value="False">
+                                        <Setter Property="Background" Value="Transparent"/>
+                                        <Setter Property="Foreground" Value="#333"/>
+                                        <Setter Property="BorderBrush" Value="Transparent"/>
+                                        <Setter Property="FontWeight" Value="Normal"/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TreeView.ItemContainerStyle>
+                        </TreeView>
+                    </ScrollViewer>
+                </Grid>
             </Border>
             
             <Border Grid.Column="1" Background="White" BorderBrush="Gray" BorderThickness="1" Margin="2">
@@ -129,6 +184,15 @@
                             <TextBox x:Name="txtStartPoint" IsReadOnly="True" Margin="2"/>
                             <TextBlock Text="终点:" Margin="2"/>
                             <TextBox x:Name="txtEndPoint" IsReadOnly="True" Margin="2"/>
+                        </StackPanel>
+                    </GroupBox>
+                    
+                    <GroupBox Header="当前文件" Margin="5">
+                        <StackPanel>
+                            <TextBlock Text="文件名:" Margin="2"/>
+                            <TextBox x:Name="txtCurrentFile" IsReadOnly="True" Margin="2"/>
+                            <TextBlock Text="路径:" Margin="2"/>
+                            <TextBox x:Name="txtFilePath" IsReadOnly="True" Margin="2"/>
                         </StackPanel>
                     </GroupBox>
                 </StackPanel>
