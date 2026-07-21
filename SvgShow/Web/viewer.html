@@ -400,39 +400,135 @@
             addSvgLayer(id, svgContent, fileName || 'new.svg');
         }
 
+        function injectElementsIntoCurrentLayer(elements, fileName) {
+            if (!elements || !Array.isArray(elements) || elements.length === 0) {
+                console.warn('No elements to inject');
+                return;
+            }
+
+            let targetLayer = null;
+            for (const id of state.layerOrder) {
+                const layer = state.svgLayers[id];
+                if (layer && layer.visible) {
+                    targetLayer = layer;
+                    break;
+                }
+            }
+
+            if (!targetLayer) {
+                console.warn('No visible SVG layer found to inject elements');
+                return;
+            }
+
+            const importGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+            importGroup.setAttribute('class', 'imported-data');
+            importGroup.setAttribute('data-file-name', fileName || 'imported');
+
+            elements.forEach(el => {
+                let svgEl = null;
+                if (el.type === 'circle') {
+                    svgEl = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                    svgEl.setAttribute('cx', el.cx != null ? el.cx : 100);
+                    svgEl.setAttribute('cy', el.cy != null ? el.cy : 100);
+                    svgEl.setAttribute('r', el.r != null ? el.r : 50);
+                } else if (el.type === 'rect') {
+                    svgEl = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                    svgEl.setAttribute('x', el.x != null ? el.x : 50);
+                    svgEl.setAttribute('y', el.y != null ? el.y : 50);
+                    svgEl.setAttribute('width', el.width || 100);
+                    svgEl.setAttribute('height', el.height || 80);
+                } else if (el.type === 'line') {
+                    svgEl = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                    svgEl.setAttribute('x1', el.x1 != null ? el.x1 : 50);
+                    svgEl.setAttribute('y1', el.y1 != null ? el.y1 : 50);
+                    svgEl.setAttribute('x2', el.x2 != null ? el.x2 : 150);
+                    svgEl.setAttribute('y2', el.y2 != null ? el.y2 : 100);
+                } else if (el.type === 'text') {
+                    svgEl = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                    svgEl.setAttribute('x', el.x != null ? el.x : 100);
+                    svgEl.setAttribute('y', el.y != null ? el.y : 100);
+                    svgEl.setAttribute('font-size', el.fontSize || 12);
+                    svgEl.textContent = el.text || 'Text';
+                } else if (el.type === 'path') {
+                    svgEl = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                    svgEl.setAttribute('d', el.d || '');
+                } else if (el.type === 'polyline') {
+                    svgEl = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+                    svgEl.setAttribute('points', el.points || '');
+                } else if (el.type === 'polygon') {
+                    svgEl = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+                    svgEl.setAttribute('points', el.points || '');
+                }
+
+                if (svgEl) {
+                    if (el.fill) svgEl.setAttribute('fill', el.fill);
+                    if (el.stroke) svgEl.setAttribute('stroke', el.stroke);
+                    if (el.strokeWidth !== undefined && el.strokeWidth !== null) {
+                        svgEl.setAttribute('stroke-width', el.strokeWidth);
+                    }
+                    importGroup.appendChild(svgEl);
+                }
+            });
+
+            const originalStyles = saveOriginalStyles(importGroup);
+            applyStyleConfig(importGroup, originalStyles);
+
+            targetLayer.element.appendChild(importGroup);
+
+            recalculateAllBounds();
+        }
+
         function importJsonToSvg(jsonData, fileName) {
             try {
                 const data = typeof jsonData === 'string' ? JSON.parse(jsonData) : jsonData;
-                let svgContent = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600">';
-                
-                if (data.elements && Array.isArray(data.elements)) {
-                    data.elements.forEach(el => {
-                        if (el.type === 'circle') {
-                            svgContent += `<circle cx="${el.cx || 100}" cy="${el.cy || 100}" r="${el.r || 50}" fill="${el.fill || 'blue'}" stroke="${el.stroke || 'black'}" stroke-width="${el.strokeWidth || 1}"/>`;
-                        } else if (el.type === 'rect') {
-                            svgContent += `<rect x="${el.x || 50}" y="${el.y || 50}" width="${el.width || 100}" height="${el.height || 80}" fill="${el.fill || 'green'}" stroke="${el.stroke || 'black'}" stroke-width="${el.strokeWidth || 1}"/>`;
-                        } else if (el.type === 'line') {
-                            svgContent += `<line x1="${el.x1 || 50}" y1="${el.y1 || 50}" x2="${el.x2 || 150}" y2="${el.y2 || 100}" stroke="${el.stroke || 'red'}" stroke-width="${el.strokeWidth || 2}"/>`;
-                        } else if (el.type === 'text') {
-                            svgContent += `<text x="${el.x || 100}" y="${el.y || 100}" font-size="${el.fontSize || 12}" fill="${el.fill || 'black'}">${el.text || 'Text'}</text>`;
-                        } else if (el.type === 'path') {
-                            svgContent += `<path d="${el.d || ''}" fill="${el.fill || 'none'}" stroke="${el.stroke || 'black'}" stroke-width="${el.strokeWidth || 1}"/>`;
-                        } else if (el.type === 'polyline') {
-                            svgContent += `<polyline points="${el.points || ''}" fill="${el.fill || 'none'}" stroke="${el.stroke || 'black'}" stroke-width="${el.strokeWidth || 1}"/>`;
-                        } else if (el.type === 'polygon') {
-                            svgContent += `<polygon points="${el.points || ''}" fill="${el.fill || 'blue'}" stroke="${el.stroke || 'black'}" stroke-width="${el.strokeWidth || 1}"/>`;
-                        }
-                    });
+
+                // 直接传入elements数组的情况（C#解析后的数据）
+                if (Array.isArray(data)) {
+                    injectElementsIntoCurrentLayer(data, fileName || 'imported.json');
+                    return;
                 }
-                
-                svgContent += '</svg>';
-                
-                const id = Date.now().toString();
-                addSvgLayer(id, svgContent, fileName || 'imported.json');
-                
+
+                if (!data.elements || !Array.isArray(data.elements) || data.elements.length === 0) {
+                    console.warn('No elements found in JSON data');
+                    return;
+                }
+
+                injectElementsIntoCurrentLayer(data.elements, fileName || 'imported.json');
             } catch (error) {
                 console.error('Failed to import JSON:', error);
             }
+        }
+
+        function importTxtToSvg(elements, fileName) {
+            try {
+                injectElementsIntoCurrentLayer(elements, fileName || 'imported.txt');
+            } catch (error) {
+                console.error('Failed to import TXT:', error);
+            }
+        }
+
+        function getSvgContent() {
+            const serializer = new XMLSerializer();
+            let svgContent = '<?xml version="1.0" encoding="UTF-8"?>\n';
+            
+            const vb = state.svgBounds || state.viewBox;
+            const xmlns = 'xmlns="http://www.w3.org/2000/svg"';
+            const viewBox = `viewBox="${vb.x || 0} ${vb.y || 0} ${vb.w || 800} ${vb.h || 600}"`;
+            
+            svgContent += `<svg ${xmlns} ${viewBox}>\n`;
+            
+            state.layerOrder.forEach(id => {
+                const layer = state.svgLayers[id];
+                if (layer && layer.visible) {
+                    const clonedGroup = layer.element.cloneNode(true);
+                    clonedGroup.removeAttribute('transform');
+                    svgContent += serializer.serializeToString(clonedGroup) + '\n';
+                }
+            });
+            
+            svgContent += '</svg>';
+            
+            sendToCSharp({ type: 'svgContent', content: svgContent });
         }
 
         function recalculateAllBounds() {
@@ -572,6 +668,12 @@
                     break;
                 case 'importJsonToSvg':
                     importJsonToSvg(msg.jsonData, msg.fileName);
+                    break;
+                case 'importTxtToSvg':
+                    importTxtToSvg(msg.elements, msg.fileName);
+                    break;
+                case 'getSvgContent':
+                    getSvgContent();
                     break;
             }
         });

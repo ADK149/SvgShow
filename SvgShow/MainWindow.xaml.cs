@@ -1,6 +1,7 @@
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Win32;
 using SvgShow.Models;
+using SvgShow.Services;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Text.Json;
@@ -15,6 +16,7 @@ namespace SvgShow
         private bool _webViewReady = false;
         private string _currentSvgPath = "";
         private string? _pendingLoadFile = null;
+        private string? _pendingSvgContent = null;
 
         public MainWindow()
         {
@@ -103,6 +105,9 @@ namespace SvgShow
                     case "scaleChanged":
                         HandleScaleChanged(root);
                         break;
+                    case "svgContent":
+                        HandleSvgContent(root);
+                        break;
                 }
             }
             catch (Exception ex)
@@ -165,6 +170,41 @@ namespace SvgShow
             Dispatcher.Invoke(() =>
             {
                 txtScale.Text = $"{scale * 100:F0}%";
+            });
+        }
+
+        private void HandleSvgContent(JsonElement root)
+        {
+            if (!root.TryGetProperty("content", out var contentProp)) return;
+            var svgContent = contentProp.GetString();
+            if (string.IsNullOrEmpty(svgContent)) return;
+
+            _pendingSvgContent = svgContent;
+
+            Dispatcher.Invoke(() =>
+            {
+                var saveFileDialog = new SaveFileDialog
+                {
+                    Filter = "SVG文件 (*.svg)|*.svg|所有文件 (*.*)|*.*",
+                    Title = "另存为SVG文件",
+                    FileName = $"{Path.GetFileNameWithoutExtension(_currentSvgPath)}_modified.svg"
+                };
+
+                if (saveFileDialog.ShowDialog() == true)
+                {
+                    try
+                    {
+                        File.WriteAllText(saveFileDialog.FileName, svgContent);
+                        MessageBox.Show($"SVG文件已保存：{saveFileDialog.FileName}", "保存成功",
+                            MessageBoxButton.OK, MessageBoxImage.Information);
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show($"保存失败: {ex.Message}", "错误",
+                            MessageBoxButton.OK, MessageBoxImage.Error);
+                    }
+                }
+                _pendingSvgContent = null;
             });
         }
 
@@ -500,6 +540,18 @@ namespace SvgShow
 
         private void ImportJson_Click(object sender, RoutedEventArgs e)
         {
+            if (string.IsNullOrEmpty(_currentSvgPath))
+            {
+                MessageBox.Show("请先打开一个SVG文件，然后再导入JSON数据", "提示",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+            else
+            {
+                MessageBox.Show("导入的JSON数据将显示在当前打开的工作区中！", "提示",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+
             var openFileDialog = new OpenFileDialog
             {
                 Filter = "JSON文件 (*.json)|*.json|所有文件 (*.*)|*.*",
@@ -511,15 +563,43 @@ namespace SvgShow
                 try
                 {
                     var jsonContent = File.ReadAllText(openFileDialog.FileName);
-                    
-                    PostMessage(new
+                    var elements = DataTool.ParseJsonGeometry(jsonContent);
+
+                    if (elements.Count == 0)
                     {
-                        action = "importJsonToSvg",
-                        jsonData = jsonContent,
-                        fileName = Path.GetFileName(openFileDialog.FileName)
-                    });
-                    
-                    MessageBox.Show($"JSON数据已导入：{openFileDialog.FileName}", "导入成功",
+                        // 解析失败时回退到原始JSON导入方式
+                        PostMessage(new
+                        {
+                            action = "importJsonToSvg",
+                            jsonData = jsonContent,
+                            fileName = Path.GetFileName(openFileDialog.FileName)
+                        });
+                    }
+                    else
+                    {
+                        PostMessage(new
+                        {
+                            action = "importJsonToSvg",
+                            jsonData = elements.Select(el => new
+                            {
+                                type = el.Type,
+                                cx = el.Cx,
+                                cy = el.Cy,
+                                r = el.R,
+                                x1 = el.X1,
+                                y1 = el.Y1,
+                                x2 = el.X2,
+                                y2 = el.Y2,
+                                d = el.D,
+                                fill = el.Fill,
+                                stroke = el.Stroke,
+                                strokeWidth = el.StrokeWidth
+                            }).ToList(),
+                            fileName = Path.GetFileName(openFileDialog.FileName)
+                        });
+                    }
+
+                    MessageBox.Show($"JSON数据已导入：{openFileDialog.FileName}，共解析 {elements.Count} 个几何元素", "导入成功",
                         MessageBoxButton.OK, MessageBoxImage.Information);
                 }
                 catch (Exception ex)
@@ -528,6 +608,79 @@ namespace SvgShow
                         MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
+        }
+
+        private void ImportTxt_Click(object sender, RoutedEventArgs e)
+        {
+            if (string.IsNullOrEmpty(_currentSvgPath))
+            {
+                MessageBox.Show("请先打开一个SVG文件，然后再导入TXT数据", "提示",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            var openFileDialog = new OpenFileDialog
+            {
+                Filter = "TXT文件 (*.txt)|*.txt|所有文件 (*.*)|*.*",
+                Title = "导入TXT数据"
+            };
+
+            if (openFileDialog.ShowDialog() == true)
+            {
+                try
+                {
+                    var txtContent = File.ReadAllText(openFileDialog.FileName);
+                    var elements = DataTool.ParseGeometry(txtContent);
+
+                    if (elements.Count == 0)
+                    {
+                        MessageBox.Show("未从TXT文件中解析到有效的几何数据", "提示",
+                            MessageBoxButton.OK, MessageBoxImage.Warning);
+                        return;
+                    }
+
+                    PostMessage(new
+                    {
+                        action = "importTxtToSvg",
+                        elements = elements.Select(el => new
+                        {
+                            type = el.Type,
+                            cx = el.Cx,
+                            cy = el.Cy,
+                            r = el.R,
+                            x1 = el.X1,
+                            y1 = el.Y1,
+                            x2 = el.X2,
+                            y2 = el.Y2,
+                            d = el.D,
+                            fill = el.Fill,
+                            stroke = el.Stroke,
+                            strokeWidth = el.StrokeWidth
+                        }).ToList(),
+                        fileName = Path.GetFileName(openFileDialog.FileName)
+                    });
+
+                    MessageBox.Show($"TXT数据已导入：{openFileDialog.FileName}，共解析 {elements.Count} 个几何元素", "导入成功",
+                        MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"导入失败: {ex.Message}", "错误",
+                        MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+        }
+
+        private void SaveAsSvg_Click(object sender, RoutedEventArgs e)
+        {
+            if (string.IsNullOrEmpty(_currentSvgPath))
+            {
+                MessageBox.Show("请先打开一个SVG文件", "提示",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            PostMessage(new { action = "getSvgContent" });
         }
     }
 }

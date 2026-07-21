@@ -21,6 +21,8 @@
 
   <ItemGroup>
     <Folder Include="SvgData\" />
+    <Folder Include="TestData\" />
+    <Folder Include="PattenData\" />
   </ItemGroup>
 
 </Project>

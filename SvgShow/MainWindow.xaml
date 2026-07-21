@@ -67,16 +67,15 @@
         <ToolBar Grid.Row="0" Height="40">
             <Button Content="打开SVG" Click="OpenSvg_Click" ToolTip="打开SVG文件或目录"/>
             <Button Content="新建SVG" Click="NewSvg_Click" ToolTip="创建新的空白SVG文件"/>
-            <Button Content="导入JSON" Click="ImportJson_Click" ToolTip="导入JSON数据到SVG显示"/>
+            <Button Content="导入TXT" Click="ImportTxt_Click" ToolTip="导入TXT数据到当前SVG"/>
+            <Button Content="导入JSON" Click="ImportJson_Click" ToolTip="导入JSON数据到当前SVG"/>
+            <Button Content="另存为SVG" Click="SaveAsSvg_Click" ToolTip="将当前视图另存为SVG文件"/>
             
             <Separator/>
-            
+
             <Button Content="重置视图" Click="ResetView_Click" ToolTip="重置缩放和平移"/>
-            
-            <Separator/>
-            
-            <TextBlock Text="缩放:" Margin="5,0"/>
-            <TextBlock x:Name="txtScale" Text="100%" Margin="5,0"/>
+            <TextBlock Text="缩放:" Margin="5,0" VerticalAlignment="Center"/>
+            <TextBlock x:Name="txtScale" Text="100%" Margin="5,0" VerticalAlignment="Center"/>
             
             <Separator/>
             
