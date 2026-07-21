@@ -66,23 +66,8 @@
         
         <ToolBar Grid.Row="0" Height="40">
             <Button Content="打开SVG" Click="OpenSvg_Click" ToolTip="打开SVG文件或目录"/>
-            
-            <Separator/>
-            
-            <Button Content="测量工具" Click="MeasureTool_Click" x:Name="btnMeasure" 
-                    ToolTip="测量两点之间的距离" Background="LightGray"/>
-            
-            <Separator/>
-            
-            <Button Content="播放动画" Click="PlayAnimation_Click" x:Name="btnPlay" ToolTip="播放多SVG动画"/>
-            <Button Content="暂停动画" Click="PauseAnimation_Click" x:Name="btnPause" ToolTip="暂停动画"/>
-            <Button Content="停止动画" Click="StopAnimation_Click" x:Name="btnStop" ToolTip="停止动画"/>
-            
-            <Separator/>
-            
-            <Slider x:Name="sliderSpeed" Minimum="0.1" Maximum="3" Value="1" Width="100" 
-                    ToolTip="动画速度" ValueChanged="SliderSpeed_ValueChanged"/>
-            <TextBlock Text="速度"/>
+            <Button Content="新建SVG" Click="NewSvg_Click" ToolTip="创建新的空白SVG文件"/>
+            <Button Content="导入JSON" Click="ImportJson_Click" ToolTip="导入JSON数据到SVG显示"/>
             
             <Separator/>
             
@@ -175,15 +160,24 @@
                             <TextBox x:Name="txtSvgPosition" IsReadOnly="True" Margin="2"/>
                         </StackPanel>
                     </GroupBox>
-                    
-                    <GroupBox Header="测量结果" Margin="5">
+
+                    <GroupBox Header="SVG样式配置" Margin="5">
                         <StackPanel>
-                            <TextBlock Text="距离:" Margin="2"/>
-                            <TextBox x:Name="txtDistance" IsReadOnly="True" Margin="2"/>
-                            <TextBlock Text="起点:" Margin="2"/>
-                            <TextBox x:Name="txtStartPoint" IsReadOnly="True" Margin="2"/>
-                            <TextBlock Text="终点:" Margin="2"/>
-                            <TextBox x:Name="txtEndPoint" IsReadOnly="True" Margin="2"/>
+                            <TextBlock Text="线宽:" Margin="2"/>
+                            <StackPanel Orientation="Horizontal" Margin="2">
+                                <Slider x:Name="sliderStrokeWidth" Minimum="0.1" Maximum="5" Value="0.5" TickFrequency="0.1" Width="120"
+                                        ValueChanged="StrokeWidth_ValueChanged" AutoToolTipPlacement="TopLeft"/>
+                                <TextBox x:Name="txtStrokeWidth" Text="0.5" Width="40" Margin="5,0" TextChanged="TxtStrokeWidth_TextChanged"/>
+                            </StackPanel>
+                            <TextBlock Text="文字缩放倍率:" Margin="2"/>
+                            <StackPanel Orientation="Horizontal" Margin="2">
+                                <Slider x:Name="sliderFontSize" Minimum="0.5" Maximum="2" Value="1" TickFrequency="0.1" Width="120"
+                                        ValueChanged="FontSize_ValueChanged" AutoToolTipPlacement="TopLeft"/>
+                                <TextBox x:Name="txtFontSize" Text="1.0" Width="40" Margin="5,0" TextChanged="TxtFontSize_TextChanged"/>
+                            </StackPanel>
+                            <CheckBox x:Name="chkEnableOverride" Content="启用样式覆盖" IsChecked="True" Margin="2"
+                                      Checked="Override_CheckedChanged" Unchecked="Override_CheckedChanged"/>
+                            <Button Content="应用到当前" Click="ApplyStyle_Click" Margin="2" Padding="3"/>
                         </StackPanel>
                     </GroupBox>
                     

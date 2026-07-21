@@ -12,11 +12,9 @@ namespace SvgShow
     public partial class MainWindow : Window
     {
         private ObservableCollection<TreeItem> _treeItems = new();
-        private bool _isMeasureMode = false;
         private bool _webViewReady = false;
         private string _currentSvgPath = "";
         private string? _pendingLoadFile = null;
-        private List<string> _allSvgFiles = new();
 
         public MainWindow()
         {
@@ -105,12 +103,6 @@ namespace SvgShow
                     case "scaleChanged":
                         HandleScaleChanged(root);
                         break;
-                    case "measureStart":
-                        HandleMeasureStart(root);
-                        break;
-                    case "measureComplete":
-                        HandleMeasureComplete(root);
-                        break;
                 }
             }
             catch (Exception ex)
@@ -173,32 +165,6 @@ namespace SvgShow
             Dispatcher.Invoke(() =>
             {
                 txtScale.Text = $"{scale * 100:F0}%";
-            });
-        }
-
-        private void HandleMeasureStart(JsonElement root)
-        {
-            var x = root.GetProperty("x").GetDouble();
-            var y = root.GetProperty("y").GetDouble();
-            Dispatcher.Invoke(() =>
-            {
-                txtStartPoint.Text = $"({x:F2}, {y:F2})";
-            });
-        }
-
-        private void HandleMeasureComplete(JsonElement root)
-        {
-            var startX = root.GetProperty("startX").GetDouble();
-            var startY = root.GetProperty("startY").GetDouble();
-            var endX = root.GetProperty("endX").GetDouble();
-            var endY = root.GetProperty("endY").GetDouble();
-            var distance = root.GetProperty("distance").GetDouble();
-            
-            Dispatcher.Invoke(() =>
-            {
-                txtStartPoint.Text = $"({startX:F2}, {startY:F2})";
-                txtEndPoint.Text = $"({endX:F2}, {endY:F2})";
-                txtDistance.Text = $"{distance:F2}";
             });
         }
 
@@ -272,14 +238,6 @@ namespace SvgShow
                 folder.HasSvgFiles = folder.Children.Count > 0;
                 
                 _treeItems.Add(folder);
-            }
-            
-            foreach (var filePath in filePaths)
-            {
-                if (!_allSvgFiles.Contains(filePath))
-                {
-                    _allSvgFiles.Add(filePath);
-                }
             }
             
             if (!string.IsNullOrEmpty(initialFile))
@@ -377,73 +335,62 @@ namespace SvgShow
             }
         }
 
-        private void MeasureTool_Click(object sender, RoutedEventArgs e)
-        {
-            _isMeasureMode = !_isMeasureMode;
-            
-            if (_isMeasureMode)
-            {
-                btnMeasure.Background = System.Windows.Media.Brushes.LightBlue;
-                txtStartPoint.Text = "";
-                txtEndPoint.Text = "";
-                txtDistance.Text = "";
-            }
-            else
-            {
-                btnMeasure.Background = System.Windows.Media.Brushes.LightGray;
-            }
-            
-            PostMessage(new
-            {
-                action = "setMeasureMode",
-                enabled = _isMeasureMode
-            });
-        }
-
         private void ResetView_Click(object sender, RoutedEventArgs e)
         {
             PostMessage(new { action = "resetView" });
         }
 
-        private void PlayAnimation_Click(object sender, RoutedEventArgs e)
+        private void StrokeWidth_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
         {
-            if (_allSvgFiles.Count < 2)
+            if (txtStrokeWidth != null)
+                txtStrokeWidth.Text = e.NewValue.ToString("F1");
+        }
+
+        private void TxtStrokeWidth_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (sliderStrokeWidth != null && double.TryParse(txtStrokeWidth.Text, out var val))
             {
-                MessageBox.Show("至少需要加载2个SVG文件才能播放动画", "提示", 
-                    MessageBoxButton.OK, MessageBoxImage.Information);
-                return;
+                sliderStrokeWidth.Value = val;
             }
-            
-            var interval = (int)(1000.0 / sliderSpeed.Value);
-            
+        }
+
+        private void FontSize_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (txtFontSize != null)
+                txtFontSize.Text = e.NewValue.ToString("F1");
+        }
+
+        private void TxtFontSize_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (sliderFontSize != null && double.TryParse(txtFontSize.Text, out var val))
+            {
+                val = Math.Max(0.5, Math.Min(10, val));
+                sliderFontSize.Value = val;
+            }
+        }
+
+        private void Override_CheckedChanged(object sender, RoutedEventArgs e)
+        {
             PostMessage(new
             {
-                action = "startAnimation",
-                interval = interval,
-                files = _allSvgFiles.Select(Path.GetFileName).ToList()
+                action = "setStyleConfig",
+                enableOverride = chkEnableOverride.IsChecked == true,
+                strokeWidth = sliderStrokeWidth.Value,
+                fontScale = sliderFontSize.Value,
+                reapply = true
             });
         }
 
-        private void PauseAnimation_Click(object sender, RoutedEventArgs e)
+        private void ApplyStyle_Click(object sender, RoutedEventArgs e)
         {
-            PostMessage(new { action = "pauseAnimation" });
-        }
-
-        private void StopAnimation_Click(object sender, RoutedEventArgs e)
-        {
-            PostMessage(new { action = "stopAnimation" });
-            
-            if (!string.IsNullOrEmpty(_currentSvgPath))
+            PostMessage(new
             {
-                LoadSvgFile(_currentSvgPath);
-            }
-        }
-
-        private void SliderSpeed_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-        {
-            if (!_webViewReady) return;
-            var interval = (int)(1000.0 / e.NewValue);
-            PostMessage(new { action = "setAnimationSpeed", speed = interval });
+                action = "setStyleConfig",
+                enableOverride = chkEnableOverride.IsChecked == true,
+                strokeWidth = sliderStrokeWidth.Value,
+                fontScale = sliderFontSize.Value,
+                reapply = true
+            });
         }
 
         private void AssociateSvg_Click(object sender, RoutedEventArgs e)
@@ -519,6 +466,67 @@ namespace SvgShow
             }
             catch
             {
+            }
+        }
+
+        private void NewSvg_Click(object sender, RoutedEventArgs e)
+        {
+            var saveFileDialog = new SaveFileDialog
+            {
+                Filter = "SVG文件 (*.svg)|*.svg|所有文件 (*.*)|*.*",
+                Title = "新建SVG文件",
+                FileName = "new.svg",
+                DefaultExt = ".svg"
+            };
+
+            if (saveFileDialog.ShowDialog() == true)
+            {
+                var svgContent = @"<svg xmlns=""http://www.w3.org/2000/svg"" viewBox=""0 0 800 600""></svg>";
+                File.WriteAllText(saveFileDialog.FileName, svgContent);
+                
+                var directory = Path.GetDirectoryName(saveFileDialog.FileName);
+                if (!string.IsNullOrEmpty(directory))
+                {
+                    var svgFiles = Directory.GetFiles(directory, "*.svg", SearchOption.TopDirectoryOnly);
+                    AddDirectoryToTree(svgFiles, saveFileDialog.FileName);
+                }
+                
+                LoadSvgFile(saveFileDialog.FileName);
+                
+                MessageBox.Show($"SVG文件已创建：{saveFileDialog.FileName}", "创建成功", 
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+        }
+
+        private void ImportJson_Click(object sender, RoutedEventArgs e)
+        {
+            var openFileDialog = new OpenFileDialog
+            {
+                Filter = "JSON文件 (*.json)|*.json|所有文件 (*.*)|*.*",
+                Title = "导入JSON数据"
+            };
+
+            if (openFileDialog.ShowDialog() == true)
+            {
+                try
+                {
+                    var jsonContent = File.ReadAllText(openFileDialog.FileName);
+                    
+                    PostMessage(new
+                    {
+                        action = "importJsonToSvg",
+                        jsonData = jsonContent,
+                        fileName = Path.GetFileName(openFileDialog.FileName)
+                    });
+                    
+                    MessageBox.Show($"JSON数据已导入：{openFileDialog.FileName}", "导入成功",
+                        MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"导入失败: {ex.Message}", "错误",
+                        MessageBoxButton.OK, MessageBoxImage.Error);
+                }
             }
         }
     }
