@@ -9,6 +9,17 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="PattenData\**" />
+    <Compile Remove="TestData\**" />
+    <EmbeddedResource Remove="PattenData\**" />
+    <EmbeddedResource Remove="TestData\**" />
+    <None Remove="PattenData\**" />
+    <None Remove="TestData\**" />
+    <Page Remove="PattenData\**" />
+    <Page Remove="TestData\**" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4078.44" />
     <PackageReference Include="SharpVectors.Wpf" Version="1.8.5" />
   </ItemGroup>
@@ -21,8 +32,6 @@
 
   <ItemGroup>
     <Folder Include="SvgData\" />
-    <Folder Include="TestData\" />
-    <Folder Include="PattenData\" />
   </ItemGroup>
 
 </Project>
