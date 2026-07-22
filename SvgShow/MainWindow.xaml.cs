@@ -630,7 +630,7 @@ namespace SvgShow
                 try
                 {
                     var txtContent = File.ReadAllText(openFileDialog.FileName);
-                    var elements = DataTool.ParseGeometry(txtContent);
+                    var elements = DataTool.ParseTxtGeometry(txtContent);
 
                     if (elements.Count == 0)
                     {

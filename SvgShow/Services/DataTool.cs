@@ -8,7 +8,7 @@ namespace SvgShow.Services
 {
     internal class DataTool
     {
-        public static List<GeometryElement> ParseGeometry(string content)
+        public static List<GeometryElement> ParseTxtGeometry(string content)
         {
             var elements = new List<GeometryElement>();
             if (string.IsNullOrWhiteSpace(content)) return elements;
@@ -44,8 +44,8 @@ namespace SvgShow.Services
                     double cx = ParseDouble(match.Groups[1].Value);
                     double cy = ParseDouble(match.Groups[2].Value);
                     double r = ParseDouble(match.Groups[3].Value);
-                    double startAngle = ParseDouble(match.Groups[4].Value);
-                    double endAngle = ParseDouble(match.Groups[5].Value);
+                    double startAngle = ParseDouble(match.Groups[4].Value) * Math.PI / 180.0;
+                    double endAngle = ParseDouble(match.Groups[5].Value) * Math.PI / 180.0;
 
                     double x1 = cx + r * Math.Cos(startAngle);
                     double y1 = cy + r * Math.Sin(startAngle);
@@ -96,47 +96,114 @@ namespace SvgShow.Services
             using var doc = JsonDocument.Parse(jsonContent);
             var root = doc.RootElement;
 
-            if (root.ValueKind != JsonValueKind.Array) return elements;
-
-            foreach (var item in root.EnumerateArray())
-            {
-                if (!item.TryGetProperty("StartPoint", out var startPoint) ||
-                    !item.TryGetProperty("EndPoint", out var endPoint))
-                {
-                    continue;
-                }
-
-                double x1 = GetJsonDouble(startPoint, "X");
-                double y1 = GetJsonDouble(startPoint, "Y");
-                double x2 = GetJsonDouble(endPoint, "X");
-                double y2 = GetJsonDouble(endPoint, "Y");
-
-                elements.Add(new GeometryElement
-                {
-                    Type = "line",
-                    X1 = x1,
-                    Y1 = y1,
-                    X2 = x2,
-                    Y2 = y2,
-                    Stroke = "#4CAF50",
-                    StrokeWidth = 1
-                });
-            }
+            // 递归遍历整个JSON，提取 GeometryType=10(线段) 和 GeometryType=14(弧) 的基础单元
+            ParseJsonNode(root, elements);
 
             return elements;
         }
 
-        private static double GetJsonDouble(JsonElement element, string propertyName)
+        private static void ParseJsonNode(JsonElement element, List<GeometryElement> elements)
         {
-            if (element.TryGetProperty(propertyName, out var prop))
+            if (element.ValueKind == JsonValueKind.Array)
             {
-                if (prop.ValueKind == JsonValueKind.Number)
-                    return prop.GetDouble();
-                if (prop.ValueKind == JsonValueKind.String && double.TryParse(prop.GetString(), out var val))
-                    return val;
+                foreach (var item in element.EnumerateArray())
+                {
+                    ParseJsonNode(item, elements);
+                }
             }
-            return 0;
+            else if (element.ValueKind == JsonValueKind.Object)
+            {
+                // 如果当前对象是线段基础单元(GeometryType=10)
+                if (IsLineUnit(element, out var line))
+                {
+                    elements.Add(line);
+                }
+                // 如果当前对象是弧基础单元(GeometryType=14)
+                else if (IsArcUnit(element, out var arc))
+                {
+                    elements.Add(arc);
+                }
+
+                // 继续递归遍历所有属性
+                foreach (var property in element.EnumerateObject())
+                {
+                    ParseJsonNode(property.Value, elements);
+                }
+            }
         }
+
+        private static bool IsLineUnit(JsonElement obj, out GeometryElement line)
+        {
+            line = null;
+            if (obj.ValueKind != JsonValueKind.Object) return false;
+            if (!obj.TryGetProperty("GeometryType", out var gt) || gt.ValueKind != JsonValueKind.Number) return false;
+            if (gt.GetInt32() != 10) return false;
+            if (!obj.TryGetProperty("StartPoint", out var sp) || !obj.TryGetProperty("EndPoint", out var ep)) return false;
+            if (!sp.TryGetProperty("X", out var x1) || !sp.TryGetProperty("Y", out var y1)) return false;
+            if (!ep.TryGetProperty("X", out var x2) || !ep.TryGetProperty("Y", out var y2)) return false;
+
+            line = new GeometryElement
+            {
+                Type = "line",
+                X1 = x1.GetDouble(),
+                Y1 = y1.GetDouble(),
+                X2 = x2.GetDouble(),
+                Y2 = y2.GetDouble(),
+                Stroke = "#4CAF50",
+                StrokeWidth = 1
+            };
+            return true;
+        }
+
+        private static bool IsArcUnit(JsonElement obj, out GeometryElement arc)
+        {
+            arc = null;
+            if (obj.ValueKind != JsonValueKind.Object) return false;
+            if (!obj.TryGetProperty("GeometryType", out var gt) || gt.ValueKind != JsonValueKind.Number) return false;
+            if (gt.GetInt32() != 14) return false;
+            if (!obj.TryGetProperty("Circle", out var circle)) return false;
+            if (!circle.TryGetProperty("Center", out var center)) return false;
+            if (!center.TryGetProperty("X", out var cx) || !center.TryGetProperty("Y", out var cy)) return false;
+            if (!circle.TryGetProperty("Radius", out var r)) return false;
+            if (!obj.TryGetProperty("StartAngle", out var startAngle)) return false;
+            if (!obj.TryGetProperty("DeltaAngle", out var deltaAngle)) return false;
+            if (!obj.TryGetProperty("IsClockwise", out var isClockwise)) return false;
+
+            double centerX = cx.GetDouble();
+            double centerY = cy.GetDouble();
+            double radius = r.GetDouble();
+            double start = startAngle.GetDouble();
+            double delta = deltaAngle.GetDouble();
+
+            // 顺时针需要反转 delta 符号以转换为 SVG 的逆时针路径
+            bool cw = isClockwise.ValueKind == JsonValueKind.True ||
+                      (isClockwise.ValueKind == JsonValueKind.String && isClockwise.GetString() == "true");
+            double sweepDelta = cw ? -delta : delta;
+            double endAngle = start + sweepDelta;
+
+            double x1 = centerX + radius * Math.Cos(start);
+            double y1 = centerY + radius * Math.Sin(start);
+            double x2 = centerX + radius * Math.Cos(endAngle);
+            double y2 = centerY + radius * Math.Sin(endAngle);
+
+            // 角度差绝对值大于180度时需要 largeArcFlag=1
+            int largeArcFlag = Math.Abs(sweepDelta) > Math.PI ? 1 : 0;
+            // SVG的sweep-flag: 0=逆时针, 1=顺时针
+            int sweepFlag = cw ? 1 : 0;
+
+            string d = $"M {x1:F6} {y1:F6} A {radius:F6} {radius:F6} 0 {largeArcFlag} {sweepFlag} {x2:F6} {y2:F6}";
+
+            arc = new GeometryElement
+            {
+                Type = "path",
+                D = d,
+                Fill = "none",
+                Stroke = "#FF9800",
+                StrokeWidth = 1
+            };
+            return true;
+        }
+
 
         private static double ParseDouble(string value)
         {
