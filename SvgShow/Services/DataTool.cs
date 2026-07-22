@@ -32,7 +32,7 @@ namespace SvgShow.Services
                         Y1 = y1,
                         X2 = x2,
                         Y2 = y2,
-                        Stroke = "#2196F3",
+                        Stroke = "#000000",
                         StrokeWidth = 1
                     });
                 }
@@ -62,7 +62,7 @@ namespace SvgShow.Services
                         Type = "path",
                         D = d,
                         Fill = "none",
-                        Stroke = "#FF9800",
+                        Stroke = "#000080",
                         StrokeWidth = 1
                     });
                 }
@@ -149,7 +149,7 @@ namespace SvgShow.Services
                 Y1 = y1.GetDouble(),
                 X2 = x2.GetDouble(),
                 Y2 = y2.GetDouble(),
-                Stroke = "#4CAF50",
+                Stroke = "#000000",
                 StrokeWidth = 1
             };
             return true;
@@ -198,7 +198,7 @@ namespace SvgShow.Services
                 Type = "path",
                 D = d,
                 Fill = "none",
-                Stroke = "#FF9800",
+                Stroke = "#000080",
                 StrokeWidth = 1
             };
             return true;
