@@ -192,8 +192,8 @@
             const newW = state.viewBox.w * zoomFactor;
             const newH = state.viewBox.h * zoomFactor;
             
-            const minSize = 10;
-            const maxSize = state.svgBounds.w * 100;
+            const minSize = Math.min(state.baseViewBox.w, state.baseViewBox.h) / 1000;
+            const maxSize = Math.max(state.svgBounds.w, state.svgBounds.h) * 100;
             
             if (newW < minSize || newH < minSize || newW > maxSize || newH > maxSize) return;
             
@@ -390,6 +390,9 @@
             state.layerOrder.push(id);
 
             recalculateAllBounds();
+            if (state.allLayersBounds) {
+                state.svgBounds = { ...state.allLayersBounds };
+            }
 
             sendToCSharp({ type: 'layerAdded', id, fileName });
         }
@@ -555,15 +558,13 @@
                 const padding = 0.1;
                 const w = maxX - minX;
                 const h = maxY - minY;
-                
+
                 state.allLayersBounds = {
                     x: minX - w * padding,
                     y: minY - h * padding,
                     w: w * (1 + 2 * padding),
                     h: h * (1 + 2 * padding)
                 };
-                
-                state.svgBounds = { ...state.allLayersBounds };
             }
         }
 

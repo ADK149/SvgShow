@@ -10,13 +10,9 @@
 
   <ItemGroup>
     <Compile Remove="PattenData\**" />
-    <Compile Remove="TestData\**" />
     <EmbeddedResource Remove="PattenData\**" />
-    <EmbeddedResource Remove="TestData\**" />
     <None Remove="PattenData\**" />
-    <None Remove="TestData\**" />
     <Page Remove="PattenData\**" />
-    <Page Remove="TestData\**" />
   </ItemGroup>
 
   <ItemGroup>
@@ -28,6 +24,10 @@
     <Content Include="Web\viewer.html">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="TestData\" />
   </ItemGroup>
 
 </Project>
