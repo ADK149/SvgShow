@@ -246,17 +246,29 @@ namespace SvgShow
 
         private void AddDirectoryToTree(string[] filePaths, string? initialFile = null)
         {
+            AddDirectoryToFolders(_treeItems, filePaths);
+            if (!string.IsNullOrEmpty(initialFile))
+            {
+                LoadSvgFile(initialFile);
+            }
+        }
+
+        /// <summary>
+        /// 将指定目录下的 svg 文件添加到目标文件夹集合中
+        /// </summary>
+        public static void AddDirectoryToFolders(ObservableCollection<TreeItem> targetFolders, string[] filePaths)
+        {
             if (filePaths.Length == 0) return;
-            
+
             var directory = Path.GetDirectoryName(filePaths[0]);
             if (string.IsNullOrEmpty(directory)) return;
-            
-            var existingFolder = _treeItems.FirstOrDefault(item => item is FolderItem folder && folder.Path == directory) as FolderItem;
-            
+
+            var existingFolder = targetFolders.FirstOrDefault(item => item is FolderItem folder && folder.Path == directory) as FolderItem;
+
             if (existingFolder != null)
             {
-                var existingFiles = existingFolder.Children.Cast<SvgFileItem>().Select(s => s.FullPath).ToHashSet();
-                
+                var existingFiles = existingFolder.Children.OfType<SvgFileItem>().Select(s => s.FullPath).ToHashSet();
+
                 foreach (var filePath in filePaths)
                 {
                     if (!existingFiles.Contains(filePath))
@@ -268,9 +280,11 @@ namespace SvgShow
                         });
                     }
                 }
-                
-                existingFolder.Children = new ObservableCollection<TreeItem>(
+
+                var sorted = new ObservableCollection<TreeItem>(
                     existingFolder.Children.OrderBy(c => c is SvgFileItem s ? s.FileName : ""));
+                existingFolder.Children.Clear();
+                foreach (var item in sorted) existingFolder.Children.Add(item);
             }
             else
             {
@@ -280,7 +294,7 @@ namespace SvgShow
                     Path = directory,
                     IsExpanded = true
                 };
-                
+
                 foreach (var filePath in filePaths.OrderBy(f => Path.GetFileName(f)))
                 {
                     folder.Children.Add(new SvgFileItem
@@ -290,17 +304,12 @@ namespace SvgShow
                     });
                 }
                 folder.HasSvgFiles = folder.Children.Count > 0;
-                
-                _treeItems.Add(folder);
-            }
-            
-            if (!string.IsNullOrEmpty(initialFile))
-            {
-                LoadSvgFile(initialFile);
+
+                targetFolders.Add(folder);
             }
         }
 
-        private async void LoadSvgFile(string filePath)
+        public async void LoadSvgFile(string filePath)
         {
             if (_currentSvgPath == filePath) return;
 
@@ -445,6 +454,15 @@ namespace SvgShow
                 fontScale = sliderFontSize.Value,
                 reapply = true
             });
+        }
+
+        private void Compare_Click(object sender, RoutedEventArgs e)
+        {
+            var window = new ComparisonWindow(this, _treeItems)
+            {
+                Owner = this
+            };
+            window.ShowDialog();
         }
 
         private void AssociateSvg_Click(object sender, RoutedEventArgs e)

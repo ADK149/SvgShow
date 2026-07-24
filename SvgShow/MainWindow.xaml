@@ -82,6 +82,8 @@
             
             <Button Content="关联SVG" Click="AssociateSvg_Click" x:Name="btnAssociate"
                     ToolTip="将本程序设置为.svg文件的默认打开方式"/>
+            <Button Content="比对" Click="Compare_Click"
+                    ToolTip="打开比对窗口，对比两个SVG文件的差异"/>
         </ToolBar>
         
         <Grid Grid.Row="1">
