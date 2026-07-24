@@ -104,6 +104,7 @@
                 if (layer && layer.originalStyles) {
                     layer.originalStyles.forEach(info => {
                         if ('fontSize' in info) {
+                            if (info.skipFontOverride) return;
                             const el = info.element;
                             const originalFontSize = parseFloat(info.fontSize) || 12;
                             let adjustedFontSize = originalFontSize * fontScale / zoomFactor;
@@ -268,6 +269,15 @@
                 }
                 if (textTags.includes(tag)) {
                     styleInfo.fontSize = el.getAttribute('font-size');
+                    // 检测 text 是否在带 transform 的 <g> 内
+                    let parent = el.parentElement;
+                    while (parent && parent !== g) {
+                        if (parent.tagName.toLowerCase() === 'g' && parent.getAttribute('transform')) {
+                            styleInfo.skipFontOverride = true;
+                            break;
+                        }
+                        parent = parent.parentElement;
+                    }
                 }
                 if (tag === 'g') {
                     styleInfo.gFontSize = el.getAttribute('font-size');
@@ -336,12 +346,21 @@
                 }
                 if (textTags.includes(tag)) {
                     const originalStyle = originalStyles?.find(info => info.element === el);
-                    const baseFontSize = originalStyle && originalStyle.fontSize 
-                        ? parseFloat(originalStyle.fontSize) 
-                        : parseFloat(el.getAttribute('font-size')) || 12;
-                    let adjustedFontSize = baseFontSize * fontScale / zoomFactor;
-                    adjustedFontSize = Math.max(5, Math.min(1000, adjustedFontSize));
-                    el.setAttribute('font-size', adjustedFontSize);
+                    if (originalStyle && originalStyle.skipFontOverride) {
+                        // 嵌套在 transform 组内的 text 保持原大小
+                        if (originalStyle.fontSize !== null) {
+                            el.setAttribute('font-size', originalStyle.fontSize);
+                        } else {
+                            el.removeAttribute('font-size');
+                        }
+                    } else {
+                        const baseFontSize = originalStyle && originalStyle.fontSize 
+                            ? parseFloat(originalStyle.fontSize) 
+                            : parseFloat(el.getAttribute('font-size')) || 12;
+                        let adjustedFontSize = baseFontSize * fontScale / zoomFactor;
+                        adjustedFontSize = Math.max(5, Math.min(1000, adjustedFontSize));
+                        el.setAttribute('font-size', adjustedFontSize);
+                    }
                 }
                 if (tag === 'g') {
                     el.removeAttribute('font-size');
@@ -384,11 +403,15 @@
                 g.appendChild(svgElem.firstChild);
             }
 
+            layersGroup.appendChild(g);
+
+            // 强制布局，确保 getCTM() 有效
+            rootSvg.getBoundingClientRect();
+
             const originalStyles = saveOriginalStyles(g);
 
             applyStyleConfig(g, originalStyles);
 
-            layersGroup.appendChild(g);
             state.svgLayers[id] = { element: g, fileName, visible: true, originalStyles };
             state.layerOrder.push(id);
 
@@ -476,10 +499,11 @@
                 }
             });
 
+            targetLayer.element.appendChild(importGroup);
+            rootSvg.getBoundingClientRect();
+
             const originalStyles = saveOriginalStyles(importGroup);
             applyStyleConfig(importGroup, originalStyles);
-
-            targetLayer.element.appendChild(importGroup);
 
             recalculateAllBounds();
         }
