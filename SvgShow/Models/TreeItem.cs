@@ -46,7 +46,27 @@ namespace SvgShow.Models
 
     public class SvgFileItem : TreeItem
     {
-        public string FileName { get; set; } = "";
-        public string FullPath { get; set; } = "";
+        private string _fileName = "";
+        private string _fullPath = "";
+
+        public string FileName
+        {
+            get => _fileName;
+            set
+            {
+                _fileName = value;
+                OnPropertyChanged(nameof(FileName));
+            }
+        }
+
+        public string FullPath
+        {
+            get => _fullPath;
+            set
+            {
+                _fullPath = value;
+                OnPropertyChanged(nameof(FullPath));
+            }
+        }
     }
 }

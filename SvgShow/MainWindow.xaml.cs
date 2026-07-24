@@ -17,6 +17,7 @@ namespace SvgShow
         private string _currentSvgPath = "";
         private string? _pendingLoadFile = null;
         private string? _pendingSvgContent = null;
+        private bool _pendingSaveToCurrent = false;
 
         public MainWindow()
         {
@@ -118,16 +119,7 @@ namespace SvgShow
 
         private void HandleMouseMove(JsonElement root)
         {
-            var x = root.GetProperty("x").GetDouble();
-            var y = root.GetProperty("y").GetDouble();
-            var screenX = root.GetProperty("screenX").GetDouble();
-            var screenY = root.GetProperty("screenY").GetDouble();
-            
-            Dispatcher.Invoke(() =>
-            {
-                txtMousePosition.Text = $"({screenX:F2}, {screenY:F2})";
-                txtSvgPosition.Text = $"({x:F2}, {y:F2})";
-            });
+            // 坐标信息已移至视图右下角的状态栏，此处不再更新右侧面板
         }
 
         private void HandleElementSelected(JsonElement root)
@@ -181,21 +173,15 @@ namespace SvgShow
 
             _pendingSvgContent = svgContent;
 
-            Dispatcher.Invoke(() =>
+            if (_pendingSaveToCurrent)
             {
-                var saveFileDialog = new SaveFileDialog
-                {
-                    Filter = "SVG文件 (*.svg)|*.svg|所有文件 (*.*)|*.*",
-                    Title = "另存为SVG文件",
-                    FileName = $"{Path.GetFileNameWithoutExtension(_currentSvgPath)}_modified.svg"
-                };
-
-                if (saveFileDialog.ShowDialog() == true)
+                _pendingSaveToCurrent = false;
+                Dispatcher.Invoke(() =>
                 {
                     try
                     {
-                        File.WriteAllText(saveFileDialog.FileName, svgContent);
-                        MessageBox.Show($"SVG文件已保存：{saveFileDialog.FileName}", "保存成功",
+                        File.WriteAllText(_currentSvgPath, svgContent);
+                        MessageBox.Show($"SVG文件已保存：{Path.GetFileName(_currentSvgPath)}", "保存成功",
                             MessageBoxButton.OK, MessageBoxImage.Information);
                     }
                     catch (Exception ex)
@@ -203,9 +189,37 @@ namespace SvgShow
                         MessageBox.Show($"保存失败: {ex.Message}", "错误",
                             MessageBoxButton.OK, MessageBoxImage.Error);
                     }
-                }
-                _pendingSvgContent = null;
-            });
+                    _pendingSvgContent = null;
+                });
+            }
+            else
+            {
+                Dispatcher.Invoke(() =>
+                {
+                    var saveFileDialog = new SaveFileDialog
+                    {
+                        Filter = "SVG文件 (*.svg)|*.svg|所有文件 (*.*)|*.*",
+                        Title = "另存为SVG文件",
+                        FileName = $"{Path.GetFileNameWithoutExtension(_currentSvgPath)}_modified.svg"
+                    };
+
+                    if (saveFileDialog.ShowDialog() == true)
+                    {
+                        try
+                        {
+                            File.WriteAllText(saveFileDialog.FileName, svgContent);
+                            MessageBox.Show($"SVG文件已保存：{saveFileDialog.FileName}", "保存成功",
+                                MessageBoxButton.OK, MessageBoxImage.Information);
+                        }
+                        catch (Exception ex)
+                        {
+                            MessageBox.Show($"保存失败: {ex.Message}", "错误",
+                                MessageBoxButton.OK, MessageBoxImage.Error);
+                        }
+                    }
+                    _pendingSvgContent = null;
+                });
+            }
         }
 
         private void OpenSvg_Click(object sender, RoutedEventArgs e)
@@ -680,7 +694,97 @@ namespace SvgShow
                 return;
             }
 
+            _pendingSaveToCurrent = false;
             PostMessage(new { action = "getSvgContent" });
+        }
+
+        private void SaveSvg_Click(object sender, RoutedEventArgs e)
+        {
+            if (string.IsNullOrEmpty(_currentSvgPath))
+            {
+                MessageBox.Show("请先打开一个SVG文件", "提示",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            _pendingSaveToCurrent = true;
+            PostMessage(new { action = "getSvgContent" });
+        }
+
+        private void RenameFile_Click(object sender, RoutedEventArgs e)
+        {
+            if (string.IsNullOrEmpty(_currentSvgPath))
+            {
+                MessageBox.Show("当前没有打开的文件", "提示",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            var newFileName = txtCurrentFile.Text?.Trim();
+            if (string.IsNullOrEmpty(newFileName))
+            {
+                MessageBox.Show("文件名不能为空", "提示",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            var directory = Path.GetDirectoryName(_currentSvgPath);
+            if (string.IsNullOrEmpty(directory))
+            {
+                MessageBox.Show("无法获取文件所在目录", "错误",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+
+            if (!newFileName.EndsWith(".svg", StringComparison.OrdinalIgnoreCase))
+            {
+                newFileName += ".svg";
+            }
+
+            var oldPath = _currentSvgPath;
+            var newPath = Path.Combine(directory, newFileName);
+
+            if (oldPath.Equals(newPath, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            if (File.Exists(newPath))
+            {
+                MessageBox.Show($"目标文件已存在：{newPath}", "错误",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+
+            try
+            {
+                File.Move(oldPath, newPath);
+                _currentSvgPath = newPath;
+                txtFilePath.Text = newPath;
+
+                foreach (var item in _treeItems)
+                {
+                    if (item is not FolderItem folder) continue;
+
+                    foreach (var child in folder.Children)
+                    {
+                        if (child is SvgFileItem fileItem && fileItem.FullPath.Equals(oldPath, StringComparison.OrdinalIgnoreCase))
+                        {
+                            fileItem.FullPath = newPath;
+                            fileItem.FileName = newFileName;
+                            break;
+                        }
+                    }
+                }
+
+                MessageBox.Show($"文件已重命名为：{newFileName}", "重命名成功",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"重命名失败：{ex.Message}", "错误",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
     }
 }
